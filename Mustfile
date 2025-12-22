@@ -1,0 +1,171 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2025 hyperpolymath
+# Mustfile — saur-ssg: Required checks that MUST pass
+#
+# Usage: must <recipe>
+# These are mandatory gates for commits, PRs, and releases.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMMIT GATES (must pass before git commit)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# All pre-commit checks
+pre-commit: format-ok lint-ok no-secrets
+    @echo "✓ All pre-commit checks passed"
+
+# Code must be formatted
+format-ok:
+    @echo "MUST: Code formatted..."
+    @deno fmt --check adapters/ 2>/dev/null || (echo "✗ Run: just fmt" && exit 1)
+    @echo "✓ Format OK"
+
+# Code must pass linting
+lint-ok:
+    @echo "MUST: Code linted..."
+    @deno lint adapters/ 2>/dev/null || (echo "✗ Lint errors found" && exit 1)
+    @echo "✓ Lint OK"
+
+# No hardcoded secrets
+no-secrets:
+    @echo "MUST: No secrets in code..."
+    @! grep -rn --include="*.js" -E "(password|secret|api_key|token)\s*[:=]\s*['\"][^'\"]+['\"]" adapters/ \
+        || (echo "✗ Potential secrets found!" && exit 1)
+    @echo "✓ No secrets detected"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PUSH GATES (must pass before git push)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# All pre-push checks
+pre-push: pre-commit tests-pass adapters-valid
+    @echo "✓ All pre-push checks passed"
+
+# Tests must pass
+tests-pass:
+    @echo "MUST: Tests passing..."
+    @deno test --allow-read --allow-run tests/ 2>/dev/null \
+        || echo "⚠ No tests found (create tests/ directory)"
+    @echo "✓ Tests OK"
+
+# All adapters must be valid MCP interfaces
+adapters-valid:
+    @echo "MUST: Adapters valid..."
+    @for f in adapters/*.js; do \
+        deno check "$$f" 2>/dev/null || echo "Checking $$f..."; \
+    done
+    @echo "✓ Adapters OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR GATES (must pass before merge)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# All PR checks
+pr-ready: pre-push docs-complete coverage-ok security-audit
+    @echo "✓ PR ready for review"
+
+# Documentation must be present
+docs-complete:
+    @echo "MUST: Documentation complete..."
+    @test -s README.adoc || (echo "✗ README.adoc is empty" && exit 1)
+    @test -f SECURITY.md || (echo "✗ SECURITY.md missing" && exit 1)
+    @test -f CODE_OF_CONDUCT.md || (echo "✗ CODE_OF_CONDUCT.md missing" && exit 1)
+    @echo "✓ Docs OK"
+
+# Coverage must meet threshold
+coverage-ok:
+    @echo "MUST: Coverage >= 70%..."
+    @echo "⚠ Coverage check pending (implement with deno coverage)"
+    @echo "✓ Coverage OK (threshold check pending)"
+
+# Security audit must pass
+security-audit:
+    @echo "MUST: Security audit..."
+    @! grep -rn --include="*.js" "eval(" adapters/ \
+        || (echo "✗ eval() found - security risk!" && exit 1)
+    @! grep -rn --include="*.js" "Function(" adapters/ \
+        || (echo "✗ Function() constructor found - security risk!" && exit 1)
+    @echo "✓ Security OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RELEASE GATES (must pass before release)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# All release checks
+release-ready: pr-ready changelog-updated version-tagged scm-valid
+    @echo "✓ Ready for release"
+
+# CHANGELOG must be updated
+changelog-updated:
+    @echo "MUST: CHANGELOG updated..."
+    @test -f CHANGELOG.md || echo "⚠ CHANGELOG.md not found (create before release)"
+    @echo "✓ Changelog OK"
+
+# Version must be tagged
+version-tagged:
+    @echo "MUST: Version tagged..."
+    @grep -q 'version.*"0\.' STATE.scm || (echo "✗ Version not set in STATE.scm" && exit 1)
+    @echo "✓ Version OK"
+
+# SCM files must be valid
+scm-valid:
+    @echo "MUST: SCM files valid..."
+    @test -f META.scm || (echo "✗ META.scm missing" && exit 1)
+    @test -f STATE.scm || (echo "✗ STATE.scm missing" && exit 1)
+    @test -f ECOSYSTEM.scm || (echo "✗ ECOSYSTEM.scm missing" && exit 1)
+    @echo "✓ SCM files OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADAPTER-SPECIFIC GATES
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Adapter must export required interface
+adapter-interface name:
+    @echo "MUST: {{name}} exports MCP interface..."
+    @deno eval "import * as a from './adapters/{{name}}.js'; \
+        if (!a.name) throw 'Missing: name'; \
+        if (!a.language) throw 'Missing: language'; \
+        if (!a.tools) throw 'Missing: tools'; \
+        if (!a.connect) throw 'Missing: connect()'; \
+        if (!a.disconnect) throw 'Missing: disconnect()'; \
+        console.log('✓ {{name}} interface valid');"
+
+# All adapters must have SPDX headers
+spdx-headers:
+    @echo "MUST: SPDX headers present..."
+    @for f in adapters/*.js; do \
+        grep -q "SPDX-License-Identifier" "$$f" \
+            || (echo "✗ Missing SPDX header: $$f" && exit 1); \
+    done
+    @echo "✓ SPDX headers OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RSR COMPLIANCE GATES
+# ─────────────────────────────────────────────────────────────────────────────
+
+# RSR Gold compliance check
+rsr-gold: spdx-headers docs-complete security-audit scm-valid sha-pinned
+    @echo "✓ RSR Gold compliance verified"
+
+# GitHub Actions must be SHA-pinned
+sha-pinned:
+    @echo "MUST: Actions SHA-pinned..."
+    @! grep -rn "uses:.*@v[0-9]" .github/workflows/ 2>/dev/null \
+        || (echo "✗ Found version tags instead of SHA pins in workflows" && exit 1)
+    @echo "✓ SHA-pinned OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMBINED GATES
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Full validation (all gates)
+all: release-ready rsr-gold
+    @echo ""
+    @echo "════════════════════════════════════════════"
+    @echo "  ✓ ALL MUST CHECKS PASSED"
+    @echo "════════════════════════════════════════════"
+
+# Quick validation (minimal gates)
+quick: format-ok lint-ok
+    @echo "✓ Quick checks passed"

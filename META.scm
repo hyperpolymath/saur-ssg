@@ -7,7 +7,7 @@
 
 (define architecture-decisions
   '((adr-001
-     (title . "RSR Compliance")
+     (title . "RSR Gold Compliance")
      (status . "accepted")
      (date . "2025-12-15")
      (context . "Satellite SSG project in the hyperpolymath ecosystem")
