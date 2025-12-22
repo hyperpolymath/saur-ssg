@@ -1,0 +1,813 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 hyperpolymath
+= saur-ssg Cookbook
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+:source-highlighter: rouge
+
+== Overview
+
+This cookbook provides comprehensive recipes for developing, testing, and deploying saur-ssg.
+It combines CLI commands, Justfile recipes, Mustfile gates, and Nickel configurations.
+
+.Quick Navigation
+[horizontal]
+<<cli-commands>>:: Direct CLI commands and combinatorics
+<<just-recipes>>:: Justfile task runner recipes
+<<must-gates>>:: Mustfile mandatory checks
+<<nickel-config>>:: Nickel configuration formulae
+<<workflows>>:: Common development workflows
+<<troubleshooting>>:: Problem-solving guide
+
+'''
+
+[[cli-commands]]
+== CLI Commands
+
+=== Deno Runtime Commands
+
+==== Basic Operations
+
+[source,bash]
+----
+# Check adapter syntax
+deno check adapters/zola.js
+
+# Run adapter
+deno run --allow-run adapters/zola.js
+
+# Format code
+deno fmt adapters/
+
+# Lint code
+deno lint adapters/
+
+# Run tests
+deno test --allow-read --allow-run tests/
+----
+
+==== Advanced Operations
+
+[source,bash]
+----
+# Bundle adapter for distribution
+deno bundle adapters/zola.js dist/zola.bundle.js
+
+# Generate documentation
+deno doc adapters/*.js
+
+# Watch mode development
+deno run --watch --allow-all adapters/zola.js
+
+# REPL with adapter loaded
+deno repl --allow-all --eval "import * as zola from './adapters/zola.js'"
+
+# Type check all adapters
+for f in adapters/*.js; do deno check "$f"; done
+----
+
+==== Coverage & Testing
+
+[source,bash]
+----
+# Run tests with coverage
+deno test --coverage=coverage/ --allow-read --allow-run tests/
+
+# Generate coverage report
+deno coverage coverage/
+
+# Generate HTML coverage report
+deno coverage coverage/ --html
+
+# Run specific test file
+deno test tests/adapters/zola_test.js
+
+# Run tests matching pattern
+deno test --filter "zola"
+----
+
+=== CLI Combinatorics
+
+==== Adapter Inspection Patterns
+
+[source,bash]
+----
+# List all adapters
+ls adapters/*.js | xargs -I {} basename {} .js
+
+# Count adapters by language (from exports)
+for f in adapters/*.js; do
+  grep -o 'language = "[^"]*"' "$f" | cut -d'"' -f2
+done | sort | uniq -c | sort -rn
+
+# Find adapters with specific tool
+grep -l "zola_build\|cobalt_build" adapters/*.js
+
+# Extract tool names from adapter
+grep -o 'name: "[^"]*"' adapters/zola.js | cut -d'"' -f2
+
+# Validate all SPDX headers
+for f in adapters/*.js; do
+  grep -q "SPDX-License-Identifier" "$f" && echo "✓ $f" || echo "✗ $f"
+done
+----
+
+==== Security Audit Patterns
+
+[source,bash]
+----
+# Find potential secrets
+grep -rn --include="*.js" -E "(password|secret|api_key|token)\s*[:=]" adapters/
+
+# Find eval usage (security risk)
+grep -rn "eval(" adapters/
+
+# Find shell command injection risks
+grep -rn "Deno.Command.*\$\{" adapters/
+
+# Audit all at once
+{
+  echo "=== Secrets ===" && grep -rn "secret\|password" adapters/ || echo "None"
+  echo "=== Eval ===" && grep -rn "eval(" adapters/ || echo "None"
+  echo "=== Injection ===" && grep -rn '\$\{.*\}.*Command' adapters/ || echo "None"
+}
+----
+
+==== Build & Release Patterns
+
+[source,bash]
+----
+# Full build pipeline
+deno fmt adapters/ && \
+deno lint adapters/ && \
+deno test --allow-read tests/ && \
+echo "✓ Build passed"
+
+# Create release tarball
+VERSION=$(grep -o 'version.*"[0-9.]*"' STATE.scm | grep -o '[0-9.]*')
+tar -czf "saur-ssg-${VERSION}.tar.gz" adapters/ README.adoc LICENSE.txt
+
+# Tag release
+git tag -a "v${VERSION}" -m "Release ${VERSION}"
+git push origin "v${VERSION}"
+----
+
+'''
+
+[[just-recipes]]
+== Just Recipes
+
+=== Installation
+
+[source,bash]
+----
+# Install just (task runner)
+# macOS
+brew install just
+
+# Linux (cargo)
+cargo install just
+
+# Nix
+nix-env -iA nixpkgs.just
+----
+
+=== Recipe Reference
+
+==== Help & Information
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just help`
+|List all available recipes
+|`just` or `just help`
+
+|`just status`
+|Show project status from STATE.scm
+|`just status`
+
+|`just version`
+|Show version info
+|`just version`
+|===
+
+==== Build & Compile
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just check`
+|Check adapter syntax
+|`just check`
+
+|`just build`
+|Bundle adapters for distribution
+|`just build`
+
+|`just clean`
+|Remove build artifacts
+|`just clean`
+|===
+
+==== Testing
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just test`
+|Run unit tests
+|`just test`
+
+|`just test-e2e`
+|Run end-to-end tests
+|`just test-e2e`
+
+|`just test-cov`
+|Run tests with coverage
+|`just test-cov`
+
+|`just test-all`
+|Run all tests (unit + e2e)
+|`just test-all`
+|===
+
+==== Linting & Formatting
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just lint`
+|Lint all code
+|`just lint`
+
+|`just fmt`
+|Format all code
+|`just fmt`
+
+|`just fmt-check`
+|Check formatting (no modify)
+|`just fmt-check`
+|===
+
+==== Adapter Management
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just adapters-list`
+|List all 28 adapters
+|`just adapters-list`
+
+|`just adapter-info <name>`
+|Show adapter details
+|`just adapter-info zola`
+
+|`just adapters-sync`
+|Sync from poly-ssg-mcp hub
+|`just adapters-sync`
+
+|`just adapter-validate <name>`
+|Validate MCP interface
+|`just adapter-validate cobalt`
+|===
+
+==== Development
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just dev`
+|Start development watcher
+|`just dev`
+
+|`just lsp`
+|Start language server
+|`just lsp`
+
+|`just repl`
+|Interactive REPL
+|`just repl`
+|===
+
+==== Security
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just audit`
+|Run security audit
+|`just audit`
+
+|`just audit-deps`
+|Check dependency vulnerabilities
+|`just audit-deps`
+|===
+
+==== CI/CD & Release
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just ci`
+|Run full CI pipeline
+|`just ci`
+
+|`just release-prep <version>`
+|Prepare release
+|`just release-prep 0.2.0`
+
+|`just release-bundle`
+|Create release tarball
+|`just release-bundle`
+|===
+
+==== Containerization
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just container-build`
+|Build container image
+|`just container-build`
+
+|`just container-run`
+|Run in container
+|`just container-run`
+|===
+
+==== Git Hooks
+
+[cols="1,2,1"]
+|===
+|Recipe |Description |Usage
+
+|`just hooks-install`
+|Install pre-commit/pre-push hooks
+|`just hooks-install`
+
+|`just hooks-remove`
+|Remove git hooks
+|`just hooks-remove`
+|===
+
+=== Recipe Combinations
+
+[source,bash]
+----
+# Full development cycle
+just fmt lint test
+
+# Pre-commit workflow
+just ci
+
+# Release workflow
+just clean build test-all release-bundle
+
+# Quick adapter development
+just adapter-validate zola && just test
+
+# Full security review
+just audit audit-deps
+----
+
+'''
+
+[[must-gates]]
+== Must Gates
+
+The Mustfile contains mandatory checks that MUST pass at various stages.
+
+=== Gate Categories
+
+==== Pre-Commit Gates
+
+[source,bash]
+----
+# Run all pre-commit checks
+must pre-commit
+
+# Individual checks
+must format-ok      # Code must be formatted
+must lint-ok        # Code must pass linting
+must no-secrets     # No hardcoded secrets
+----
+
+==== Pre-Push Gates
+
+[source,bash]
+----
+# Run all pre-push checks
+must pre-push
+
+# Individual checks
+must tests-pass       # Tests must pass
+must adapters-valid   # Adapters must be valid
+----
+
+==== PR Gates
+
+[source,bash]
+----
+# Run all PR checks
+must pr-ready
+
+# Individual checks
+must docs-complete    # Documentation present
+must coverage-ok      # Coverage >= 70%
+must security-audit   # Security audit pass
+----
+
+==== Release Gates
+
+[source,bash]
+----
+# Run all release checks
+must release-ready
+
+# Individual checks
+must changelog-updated   # CHANGELOG updated
+must version-tagged      # Version in STATE.scm
+must scm-valid          # SCM files present
+----
+
+==== RSR Compliance
+
+[source,bash]
+----
+# Full RSR Gold check
+must rsr-gold
+
+# Individual checks
+must spdx-headers    # SPDX headers present
+must sha-pinned      # Actions SHA-pinned
+----
+
+=== Gate Combinations
+
+[source,bash]
+----
+# Quick validation (fast feedback)
+must quick
+
+# Full validation (all gates)
+must all
+
+# Specific adapter validation
+must adapter-interface zola
+----
+
+'''
+
+[[nickel-config]]
+== Nickel Configuration
+
+=== Generate Configuration
+
+[source,bash]
+----
+# Generate Nickel config
+just nickel-gen
+
+# Validate Nickel config
+just nickel-check
+
+# Or manually
+nickel check config.ncl
+nickel export config.ncl --format json
+----
+
+=== Configuration Schema
+
+[source,nickel]
+----
+# config.ncl - Project configuration
+{
+  project = "saur-ssg",
+  version = "0.1.0",
+
+  adapters = {
+    count = 28,
+    languages = [
+      "Rust", "Haskell", "Elixir", "Clojure", "Julia",
+      "Scala", "Common Lisp", "F#", "Racket", "Kotlin",
+      "Crystal", "Nim", "Swift", "D", "Tcl", "OCaml", "Erlang"
+    ],
+
+    # Adapter categories by language family
+    functional = ["Haskell", "Elixir", "Clojure", "F#", "Racket", "OCaml", "Erlang"],
+    systems = ["Rust", "Crystal", "Nim", "Swift", "D"],
+    scientific = ["Julia", "Scala"],
+    lisp = ["Clojure", "Common Lisp", "Racket"]
+  },
+
+  build = {
+    runtime = "deno",
+    test_cmd = "just test",
+    lint_cmd = "just lint",
+    fmt_cmd = "just fmt"
+  },
+
+  ci = {
+    platforms = ["ubuntu-latest"],
+    node_version = null,  # Not needed - using Deno
+    deno_version = "1.x"
+  },
+
+  security = {
+    sast = "CodeQL",
+    allowed_licenses = ["MIT", "AGPL-3.0-or-later", "Apache-2.0"],
+    required_headers = ["SPDX-License-Identifier", "SPDX-FileCopyrightText"]
+  }
+}
+----
+
+=== Nickel Formulae Library
+
+[source,nickel]
+----
+# formulae.ncl - Reusable configuration patterns
+
+let Adapter = {
+  name | String,
+  language | String,
+  tools | Array { name : String, description : String }
+} in
+
+let validate_adapter = fun adapter =>
+  adapter.name != "" &&
+  adapter.language != "" &&
+  std.array.length adapter.tools > 0
+in
+
+let ssg_languages = [
+  { name = "Rust", ssgs = ["Cobalt", "mdBook", "Zola"] },
+  { name = "Haskell", ssgs = ["Ema", "Hakyll"] },
+  { name = "Elixir", ssgs = ["Serum", "Tableau", "NimblePublisher"] }
+  # ... more languages
+] in
+
+{
+  Adapter,
+  validate_adapter,
+  ssg_languages,
+
+  # Generate adapter config
+  make_adapter = fun name lang tools => {
+    name = name,
+    language = lang,
+    tools = tools
+  },
+
+  # Count adapters by language
+  count_by_language = fun adapters =>
+    std.array.fold_right
+      (fun acc adapter =>
+        let lang = adapter.language in
+        acc & { "%{lang}" = (acc."%{lang}" or 0) + 1 })
+      {}
+      adapters
+}
+----
+
+'''
+
+[[workflows]]
+== Common Workflows
+
+=== New Adapter Development
+
+[source,bash]
+----
+# 1. Create adapter from template
+cp adapters/_template.js adapters/new-ssg.js
+
+# 2. Edit adapter
+$EDITOR adapters/new-ssg.js
+
+# 3. Validate interface
+just adapter-validate new-ssg
+
+# 4. Test
+just test
+
+# 5. Format and lint
+just fmt lint
+
+# 6. Commit
+git add adapters/new-ssg.js
+git commit -m "feat(adapters): add new-ssg adapter"
+----
+
+=== Pre-Release Checklist
+
+[source,bash]
+----
+# 1. Run all must gates
+must all
+
+# 2. Update version
+just release-prep 0.2.0
+
+# 3. Update CHANGELOG
+$EDITOR CHANGELOG.md
+
+# 4. Update STATE.scm
+$EDITOR STATE.scm
+
+# 5. Final validation
+must release-ready
+
+# 6. Create bundle
+just release-bundle
+
+# 7. Tag and push
+git tag -a v0.2.0 -m "Release 0.2.0"
+git push origin main --tags
+----
+
+=== CI/CD Pipeline
+
+[source,bash]
+----
+# Local CI simulation
+just ci
+
+# Step by step
+just fmt-check      # Format check
+just lint           # Lint
+just test           # Unit tests
+just test-e2e       # E2E tests
+just audit          # Security audit
+must rsr-gold       # RSR compliance
+----
+
+=== Debugging Adapter
+
+[source,bash]
+----
+# 1. Start REPL with adapter
+deno repl --allow-all
+
+# 2. Import and test
+> import * as zola from './adapters/zola.js'
+> await zola.connect()
+> zola.isConnected()
+> zola.tools.map(t => t.name)
+> await zola.tools[0].execute({})
+> await zola.disconnect()
+----
+
+'''
+
+[[troubleshooting]]
+== Troubleshooting
+
+=== Common Issues
+
+==== "deno: command not found"
+
+[source,bash]
+----
+# Install Deno
+curl -fsSL https://deno.land/install.sh | sh
+
+# Or with Nix
+nix-shell -p deno
+----
+
+==== "just: command not found"
+
+[source,bash]
+----
+# Install just
+cargo install just
+
+# Or with Nix
+nix-shell -p just
+----
+
+==== Adapter validation fails
+
+[source,bash]
+----
+# Check required exports
+deno eval "
+  import * as a from './adapters/failing.js';
+  console.log('name:', a.name);
+  console.log('language:', a.language);
+  console.log('tools:', a.tools?.length);
+  console.log('connect:', typeof a.connect);
+"
+----
+
+==== Tests not found
+
+[source,bash]
+----
+# Create test directory
+mkdir -p tests
+
+# Create minimal test
+cat > tests/example_test.js << 'EOF'
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+
+Deno.test("example", () => {
+  assertEquals(1 + 1, 2);
+});
+EOF
+----
+
+==== Coverage below threshold
+
+[source,bash]
+----
+# Generate detailed coverage report
+deno test --coverage=coverage/ tests/
+deno coverage coverage/ --detailed
+
+# Find uncovered lines
+deno coverage coverage/ | grep "0.00%"
+----
+
+=== Getting Help
+
+[source,bash]
+----
+# Show all just recipes
+just help
+
+# Show must gates
+cat Mustfile | grep "^#" | head -30
+
+# Check project status
+just status
+
+# Validate SCM files
+just scm-check
+----
+
+'''
+
+== Appendix
+
+=== Adapter Interface Specification
+
+Every adapter MUST export:
+
+[source,javascript]
+----
+// Required exports
+export const name = "SSGName";           // String
+export const language = "Language";       // String
+export const description = "...";         // String (optional)
+
+export async function connect() {}        // Connect to SSG CLI
+export async function disconnect() {}     // Disconnect
+export function isConnected() {}          // Returns boolean
+
+export const tools = [                    // MCP tool definitions
+  {
+    name: "ssg_operation",
+    description: "What it does",
+    inputSchema: { type: "object", properties: {...} },
+    execute: async (params) => { return { result: ... }; }
+  }
+];
+----
+
+=== SPDX Header Format
+
+[source,javascript]
+----
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2025 hyperpolymath
+----
+
+=== Commit Message Format
+
+----
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+
+Types: feat, fix, docs, style, refactor, test, chore
+Scopes: adapters, ci, docs, security, config
+----
+
+'''
+
+_Last updated: 2025-12-17_
